@@ -75,7 +75,7 @@ class NokiaSr
     if args.size > 0 && args[0] == 'all'
       @prompt_history = []
     else
-      if @prompt_history.size > 1
+      if @prompt_history.any?
         @prompt_history.pop
       end
     end
