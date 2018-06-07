@@ -6,7 +6,14 @@ require 'socket'
 require 'bundler/setup'
 require 'hrr_rb_ssh'
 
-require_relative './nokia_sr'
+
+def instantiate_ne logger, model, hostname, username
+  klass = Class.new do
+  end
+
+  klass.class_eval File.read(File.join(".", "lib", model + ".rb"))
+  klass.new logger, hostname, username
+end
 
 
 def ne_cli_sim ne, logger=nil
@@ -19,7 +26,7 @@ def ne_cli_sim ne, logger=nil
   conn_ne_cli = HrrRbSsh::Connection::RequestHandler.new { |context|
     context.chain_proc { |chain|
       begin
-        ne_instance = ne['type'].new logger, ne['hostname'], ne['username']
+        ne_instance = instantiate_ne(logger, ne['model'], ne['hostname'], ne['username'])
         context.io[1].write ne_instance.prompt
         loop do
           break if ne_instance.closed?

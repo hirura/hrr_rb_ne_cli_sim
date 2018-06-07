@@ -10,12 +10,12 @@ logger = Logger.new STDOUT
 logger.level = Logger::INFO
 
 ne = {
+  'model'      => 'nokia_sr',
   'hostname'   => 'ne01',
   'ip_address' => '127.0.0.1',
   'port'       => 50022,
   'username'   => 'user',
   'password'   => 'pass',
-  'type'       => NokiaSr,
 }
 
 ne_cli_sim ne, logger
