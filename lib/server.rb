@@ -8,11 +8,15 @@ require 'hrr_rb_ssh'
 
 
 def instantiate_ne logger, model, hostname, username
-  klass = Class.new do
-  end
-
+  klass = Class.new
   klass.class_eval File.read(File.join(".", "lib", model + ".rb"))
-  klass.new logger, hostname, username
+  ne_instance = klass.new logger, hostname, username
+  begin
+    ne_instance.instance_eval File.read(File.join(".", "lib", hostname + ".rb"))
+  rescue Errno::ENOENT
+    Thread.pass
+  end
+  ne_instance
 end
 
 
