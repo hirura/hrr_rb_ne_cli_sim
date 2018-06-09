@@ -1,13 +1,7 @@
 # coding: utf-8
 # vim: et ts=2 sw=2
 
-require 'logger'
-
 require_relative './lib/server'
-
-
-logger = Logger.new STDOUT
-logger.level = Logger::INFO
 
 nes = [
   {
@@ -28,4 +22,4 @@ nes = [
   }
 ]
 
-ne_cli_sim nes, logger
+ne_cli_sim nes

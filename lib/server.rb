@@ -1,6 +1,7 @@
 # coding: utf-8
 # vim: et ts=2 sw=2
 
+require 'logger'
 require 'socket'
 
 require 'bundler/setup'
@@ -81,9 +82,13 @@ def start_server ne, logger
 end
 
 
-def ne_cli_sim nes, logger=nil
+def ne_cli_sim nes
+  logger = ::Logger.new STDOUT
+  logger.level = ::Logger::INFO
+
   ts = []
   nes.each{ |ne|
+    logger.info { "Binding #{ne['hostname']}(#{ne['model']}) to #{ne['username']}@#{ne['ip_address']}:#{ne['port']}" }
     ts.push(Thread.new{ start_server ne, logger })
   }
   ts.each(&:join)
