@@ -56,13 +56,14 @@ def start_server ne, logger
   options['connection_channel_request_shell']      = conn_cli(ne, logger)
 
   server = TCPServer.new ne['ip_address'], ne['port']
+  logger.info { "Started TCP server #{server.inspect}" }
   loop do
     Thread.new(server.accept) do |io|
+      logger.info { "Accepted TCP connection from #{io.peeraddr.inspect}" }
       begin
         pid = fork do
           begin
-            server = HrrRbSsh::Server.new io, options
-            server.start
+            HrrRbSsh::Server.new(io, options).start
           rescue => e
             logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join } if logger
             exit false
