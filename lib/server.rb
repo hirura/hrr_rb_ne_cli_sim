@@ -11,7 +11,7 @@ require 'socket'
 def instantiate_ne ne, logger
   logger.info { "Load model: #{ne['model']}" }
   klass = Class.new
-  klass.class_eval File.read(File.join(".", "lib", ne['model'] + ".rb"))
+  klass.class_eval File.read(File.join(File.expand_path(File.dirname(__FILE__)), ne['model'] + ".rb"))
   klass.class_eval do
     def singleton_method_added method
       @logger.info { "override method: #{method}" }
@@ -20,7 +20,7 @@ def instantiate_ne ne, logger
   ne_instance = klass.new ne['hostname'], ne['username'], logger
   begin
     logger.info { "Load host specific behavior: #{ne['hostname']}" }
-    ne_instance.instance_eval File.read(File.join(".", "lib", ne['hostname'] + ".rb"))
+    ne_instance.instance_eval File.read(File.join(File.expand_path(File.dirname(__FILE__)), ne['hostname'] + ".rb"))
   rescue Errno::ENOENT
     logger.info { "Load failed. No override" }
   end
