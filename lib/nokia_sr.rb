@@ -1,7 +1,7 @@
 # coding: utf-8
 # vim: et ts=2 sw=2
 
-def initialize logger, hostname, username
+def initialize hostname, username, logger
   @logger         = logger
   @hostname       = hostname
   @username       = username
@@ -34,19 +34,23 @@ def run input_str
     ret.write (input_line.chomp + "\r\n")
     begin
       command = command_line.chomp
+      @logger.info { "command: #{command.inspect}" }
       command_splitted = command.split(' ')
       if command_splitted.any?
         method = command_splitted[0].gsub('-', '_')
         args = command_splitted[1..-1]
-        ret.write send(method.to_sym, args)
+        output = send(method.to_sym, args)
+        @logger.info { "output:  #{output.inspect}" }
+        ret.write output
       end
     rescue => e
-      if @logger
-        @logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join }
-      end
+      @logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join }
       position = prompt.length
-      ret.write ' '*position + '^' + "\r\n" + 'Error: Bad command.' + "\r\n"
+      output = ' '*position + '^' + "\r\n" + 'Error: Bad command.' + "\r\n"
+      @logger.info { "output:  #{output.inspect}" }
+      ret.write output
     ensure
+      @logger.info { "prompt:  #{prompt.inspect}" }
       ret.write prompt
     end
   }

@@ -24,3 +24,6 @@ Gemfile.lock
 .DS_Store
 *~
 *.swp
+
+# log directory
+/log

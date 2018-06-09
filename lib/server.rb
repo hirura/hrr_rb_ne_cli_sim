@@ -1,42 +1,63 @@
 # coding: utf-8
 # vim: et ts=2 sw=2
 
+require 'bundler/setup'
+require 'hrr_rb_ssh'
+require 'fileutils'
 require 'logger'
 require 'socket'
 
-require 'bundler/setup'
-require 'hrr_rb_ssh'
 
-
-def instantiate_ne logger, model, hostname, username
+def instantiate_ne ne, logger
+  logger.info { "Load model: #{ne['model']}" }
   klass = Class.new
-  klass.class_eval File.read(File.join(".", "lib", model + ".rb"))
-  ne_instance = klass.new logger, hostname, username
+  klass.class_eval File.read(File.join(".", "lib", ne['model'] + ".rb"))
+  klass.class_eval do
+    def singleton_method_added method
+      @logger.info { "override method: #{method}" }
+    end
+  end
+  ne_instance = klass.new ne['hostname'], ne['username'], logger
   begin
-    ne_instance.instance_eval File.read(File.join(".", "lib", hostname + ".rb"))
+    logger.info { "Load host specific behavior: #{ne['hostname']}" }
+    ne_instance.instance_eval File.read(File.join(".", "lib", ne['hostname'] + ".rb"))
   rescue Errno::ENOENT
-    Thread.pass
+    logger.info { "Load failed. No override" }
   end
   ne_instance
 end
 
-
-def auth_password ne, logger
+def auth_password ne
   HrrRbSsh::Authentication::Authenticator.new { |context|
     context.verify ne['username'], ne['password']
   }
 end
 
-def conn_cli ne, logger
+def conn_cli ne
   HrrRbSsh::Connection::RequestHandler.new { |context|
     context.chain_proc { |chain|
+      log_dir = File.join(File.expand_path(File.dirname(__FILE__)), '..', 'log', 'ne')
+      log_file = File.join(log_dir, "#{ne['hostname']}.cli.log")
+      log_shift_age = 0
+      log_shift_size = 1048576
+      FileUtils.mkdir_p(log_dir)
+      logger = ::Logger.new(log_file, log_shift_age, log_shift_size)
+      logger.level = ::Logger::INFO
+
       begin
-        ne_instance = instantiate_ne(logger, ne['model'], ne['hostname'], ne['username'])
+        ne_instance = instantiate_ne(ne, logger)
+        logger.info { "send:    #{ne_instance.prompt.inspect}" }
         context.io[1].write ne_instance.prompt
         loop do
-          break if ne_instance.closed?
+          if ne_instance.closed?
+            logger.info { "closed and exit" }
+            break
+          end
           input_str = context.io[0].readpartial(10240)
-          context.io[1].write ne_instance.run(input_str)
+          logger.info { "receive: #{input_str.inspect}" }
+          output_str = ne_instance.run(input_str)
+          logger.info { "send:    #{output_str.inspect}" }
+          context.io[1].write output_str
         end
         exitstatus = 0
       rescue => e
@@ -48,49 +69,69 @@ def conn_cli ne, logger
   }
 end
 
-def start_server ne, logger
-  HrrRbSsh::Logger.initialize logger if logger
+def start_server ne
+  log_dir = File.join(File.expand_path(File.dirname(__FILE__)), '..', 'log', 'ne')
+  log_file = File.join(log_dir, "#{ne['hostname']}.ssh.log")
+  log_shift_age = 0
+  log_shift_size = 1048576
+  FileUtils.mkdir_p(log_dir)
+  logger = ::Logger.new(log_file, log_shift_age, log_shift_size)
+  logger.level = ::Logger::INFO
 
-  options = {}
-  options['authentication_password_authenticator'] = auth_password(ne, logger)
-  options['connection_channel_request_shell']      = conn_cli(ne, logger)
-
-  server = TCPServer.new ne['ip_address'], ne['port']
-  logger.info { "Started TCP server #{server.inspect}" }
-  loop do
-    Thread.new(server.accept) do |io|
-      logger.info { "Accepted TCP connection from #{io.peeraddr.inspect}" }
-      begin
-        pid = fork do
-          begin
-            HrrRbSsh::Server.new(io, options).start
-          rescue => e
-            logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join } if logger
-            exit false
+  begin
+    server = TCPServer.new ne['ip_address'], ne['port']
+    logger.info { "Started TCP server #{server.inspect}" }
+    loop do
+      Thread.new(server.accept) do |io|
+        logger.info { "Accepted TCP connection from #{io.peeraddr.inspect}" }
+        begin
+          pid = fork do
+            begin
+              options = {
+                'authentication_password_authenticator' => auth_password(ne),
+                'connection_channel_request_shell'      => conn_cli(ne),
+              }
+              HrrRbSsh::Logger.initialize logger
+              HrrRbSsh::Server.new(io, options).start
+            rescue => e
+              logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join }
+              exit false
+            end
           end
+          logger.info { "process #{pid} started" }
+          io.close rescue nil
+          pid, status = Process.waitpid2 pid
+        rescue => e
+          logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join }
+        ensure
+          status ||= nil
+          logger.info { "process #{pid} finished with status #{status.inspect}" }
         end
-        logger.info { "process #{pid} started" } if logger
-        io.close rescue nil
-        pid, status = Process.waitpid2 pid
-      rescue => e
-        logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join } if logger
-      ensure
-        status ||= nil
-        logger.info { "process #{pid} finished with status #{status.inspect}" } if logger
       end
     end
+  rescue => e
+    logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join }
   end
 end
 
 
 def ne_cli_sim nes
-  logger = ::Logger.new STDOUT
+  log_dir = File.join(File.expand_path(File.dirname(__FILE__)), '..', 'log')
+  log_file = File.join(log_dir, 'ne_cli_sim.log')
+  log_shift_age = 0
+  log_shift_size = 1048576
+  FileUtils.mkdir_p(log_dir)
+  logger = ::Logger.new(log_file, log_shift_age, log_shift_size)
   logger.level = ::Logger::INFO
 
   ts = []
   nes.each{ |ne|
     logger.info { "Binding #{ne['hostname']}(#{ne['model']}) to #{ne['username']}@#{ne['ip_address']}:#{ne['port']}" }
-    ts.push(Thread.new{ start_server ne, logger })
+    begin
+      ts.push(Thread.new{ start_server ne })
+    rescue => e
+      logger.error { [e.backtrace[0], ": ", e.message, " (", e.class.to_s, ")\n\t", e.backtrace[1..-1].join("\n\t")].join }
+    end
   }
   ts.each(&:join)
 end
