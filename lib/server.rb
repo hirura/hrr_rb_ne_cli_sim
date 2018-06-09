@@ -20,14 +20,14 @@ def instantiate_ne logger, model, hostname, username
 end
 
 
-def ne_cli_sim ne, logger=nil
-  HrrRbSsh::Logger.initialize logger
-
-  auth_password = HrrRbSsh::Authentication::Authenticator.new { |context|
+def auth_password ne, logger
+  HrrRbSsh::Authentication::Authenticator.new { |context|
     context.verify ne['username'], ne['password']
   }
+end
 
-  conn_ne_cli = HrrRbSsh::Connection::RequestHandler.new { |context|
+def conn_cli ne, logger
+  HrrRbSsh::Connection::RequestHandler.new { |context|
     context.chain_proc { |chain|
       begin
         ne_instance = instantiate_ne(logger, ne['model'], ne['hostname'], ne['username'])
@@ -45,10 +45,14 @@ def ne_cli_sim ne, logger=nil
       exitstatus
     }
   }
+end
+
+def start_server ne, logger
+  HrrRbSsh::Logger.initialize logger if logger
 
   options = {}
-  options['authentication_password_authenticator'] = auth_password
-  options['connection_channel_request_shell']      = conn_ne_cli
+  options['authentication_password_authenticator'] = auth_password(ne, logger)
+  options['connection_channel_request_shell']      = conn_cli(ne, logger)
 
   server = TCPServer.new ne['ip_address'], ne['port']
   loop do
@@ -74,4 +78,13 @@ def ne_cli_sim ne, logger=nil
       end
     end
   end
+end
+
+
+def ne_cli_sim nes, logger=nil
+  ts = []
+  nes.each{ |ne|
+    ts.push(Thread.new{ start_server ne, logger })
+  }
+  ts.each(&:join)
 end
